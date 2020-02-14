@@ -31,6 +31,17 @@ features is tough, we center in providing help for the most common
 requirements. If you have specific needs, we recommend downloading the
 data and creating the plot you like this way.
 
+## Sample data
+
+This repo contains some sample data from FED3 on the `data_FED3` folder
+and FED2 on the `data_FED2`.
+
+## Code
+
+There are samples of analysis code in python (adapted from , not
+actively maintained) and in R (schematic read all `.csv` and basic plot,
+not maintained).
+
 ## Compatibility Issues
 
 Initially designed for FED3, it should be mostly compatible with FED2
