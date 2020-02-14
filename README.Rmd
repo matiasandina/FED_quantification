@@ -1,0 +1,29 @@
+---
+title: "FED Quantification"
+output: github_document
+---
+
+This repository contains code for an app to quickly visualize data produced by [FED3](https://open-ephys.org/fed3/fed3) devices.
+
+<img src="https://images.squarespace-cdn.com/content/v1/53039db8e4b0649958e13c7b/1571010943098-2CBODWXUF3Q56UOOFE85/ke17ZwdGBToddI8pDm48kDHPSfPanjkWqhH6pl6g5ph7gQa3H78H3Y0txjaiv_0fDoOvxcdMmMKkDsyUqMSsMWxHk725yiiHCCLfrh8O1z4YTzHvnKhyp6Da-NYroOW3ZGjoBKy3azqku80C789l0mwONMR1ELp49Lyc52iWr5dNb1QJw9casjKdtTg1_-y4jz4ptJBmI9gQmbjSQnNGng/IMG_20191010_170750.jpg" alt="FED3 -- Open Ephys" width="600"/>
+
+## Usage
+
+This app is currently hosted at https://matias-andina.shinyapps.io/deploy/.
+
+> This is a free server (25 hours per month). If you want to play for long periods of time, please clone this repo and run the app in your local machine. We recommend downloading [Rstudio](https://rstudio.com/products/rstudio/download/) and running the `FED_app.R` script (development version).
+
+This app will allow the user:
+
+1) Pool data coming from many FED devices and download a `.csv` file. 
+2) Quickly visualize different variables and download a `.png` graph of the data.
+
+The main goal is *not* to produce publication ready graphs. If you want them, you can save the plots as `.svg` and edit them in whatever software you fancy. Because implementation of single individualized features is tough, we center in providing help for the most common requirements. If you have specific needs, we recommend downloading the data and creating the plot you like this way. 
+
+## Compatibility Issues
+
+Initially designed for FED3, it should be mostly compatible with FED2 devices. Please file issues to make it better.
+
+## Contribute
+
+This is a preliminary release. Please file issues to make it better.
