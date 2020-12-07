@@ -1,4 +1,7 @@
 library(tidyverse)
+library(shiny)
+library(DT)
+
 
 # Initialize things -------------------
 
@@ -30,9 +33,9 @@ ui_upload <- sidebarLayout(
     tabPanel("Data", value = "data",
              column(12,
              h4("Raw Data"),
-             dataTableOutput("preview1"),
+             DT::dataTableOutput("preview1"),
              h4("Filtered Data"),
-             dataTableOutput("preview2")
+             DT::dataTableOutput("preview2")
                     )
              ),
     tabPanel("Plot", value = "plot",
@@ -90,7 +93,7 @@ server <- function(input, output, session) {
       Device_Number = col_double(),
       Battery_Voltage = col_double(),
       Motor_Turns = col_double(),
-      FR_Ratio = col_character(),
+      #FR_Ratio = col_character(),
       Active_Poke = col_character(),
       Left_Poke_Count = col_double(),
       Right_Poke_Count = col_double(),
@@ -112,7 +115,7 @@ server <- function(input, output, session) {
     req(input$file)
     # get raw data
     li <- raw()
-    # givethem names
+    # give them names
     names(li) <- get_fed_names()
     # code for a plot
     df <- bind_rows(li, .id = "FED") %>%
@@ -123,15 +126,16 @@ server <- function(input, output, session) {
              year = lubridate::year(date))
     
     # filter dates 
-    filter_dates <- get_date_range()
-    df <- df %>%
-      filter(between(date, filter_dates$from, filter_dates$to)) %>%
-      mutate(date = lubridate::as_datetime(date))
+    #filter_dates <- get_date_range()
+    #df <- df %>%
+    #  mutate(date = lubridate::as_datetime(date)) %>% 
+    #  filter(between(date, filter_dates$from, filter_dates$to)) 
     
     ## Add FR_Ratio (make compatible with FED2)
     if("FR_Ratio" %in% names(df) == FALSE){
       df <- df %>% mutate(FR_Ratio = 1)
     }
+    print(df)
     return(df)
   })
   
@@ -142,10 +146,14 @@ server <- function(input, output, session) {
     fed <- stringr::str_extract(string = input$file$name,
                          pattern = "FED[0-9]{3}")
     #fed <- stringr::str_remove(fed, "FED")
+    
     return(fed)
   })
   
+
+  # Update column selectors -------------------------------------------------
   # whenever we upload to raw, we change the columns
+  # Change x_var
   observe({
   updateSelectInput(
     session,
@@ -191,10 +199,10 @@ server <- function(input, output, session) {
                                                  list('5', '15', 'All'))
   )
   
-  output$preview1 <- renderDataTable(raw()[[1]],
+  output$preview1 <- DT::renderDataTable(raw()[[1]],
                                      options = table_render_options)
 
-  output$preview2 <- renderDataTable(tidied(), options = table_render_options)
+  output$preview2 <- DT::renderDataTable(tidied(), options = table_render_options)
 
   # Plot --------------------------------
   
