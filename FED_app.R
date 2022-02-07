@@ -2,16 +2,24 @@ library(tidyverse)
 library(shiny)
 library(DT)
 
+# source functions
+source("R/create_treatment_key.R")
 
 # Initialize things -------------------
-
-training_programs <- data.frame(FED = "FED",
-                                FR = "FR") 
+training_programs <- data.frame(FreeFeed = "FreeFeed",
+                                FR1 = "FR1",
+                                FR3 = "FR3",
+                                FR5 = "FR5") 
 
 
 ui_upload <- sidebarLayout(
   sidebarPanel(
-    fileInput("file", "Data", buttonLabel = "Upload .csv", multiple = TRUE),
+    fileInput("file", "Upload or drag/drop one or multiple FED3 files",
+              buttonLabel = "Upload .csv",
+              multiple = TRUE),
+    fileInput("treatment_key", "Upload or drag/drop config.yaml",
+              buttonLabel = "Upload config.yaml",
+              multiple = FALSE),
     dateRangeInput('dateRange',
                    label = 'Date range input: yyyy-mm-dd',
                    start = Sys.Date() - 2, end = Sys.Date() + 2
@@ -32,9 +40,11 @@ ui_upload <- sidebarLayout(
     #h3("Raw data"),
     tabPanel("Data", value = "data",
              column(12,
-             h4("Raw Data"),
+             h4("Auto Assignment"),
+             h5("Check that the animal assignment to FEDs is correct"),
              DT::dataTableOutput("preview1"),
-             h4("Filtered Data"),
+             h4("Manual Assignment"),
+             h5("Assign FED to Animal."),
              DT::dataTableOutput("preview2")
                     )
              ),
@@ -81,49 +91,39 @@ ui <- fluidPage(
 
 server <- function(input, output, session) {
   # Upload ---------------------------------------------------------------
-  raw <- reactive({
+  # this will return the address of the local copy of the files
+  # the $datapath column of input$file contains the temp files created
+  filelist <- reactive({
+    return(input$file$datapath)
+  })
+  
+  # use read_fed to get raw data in
+  raw_df <- reactive({
     req(input$file)
-    #delim <- if (input$delim == "") NULL else input$delim
-    # we leave as NULL to guess
-    delim <- NULL
-    
-    # col classes
-    FED3_classes <-  cols(
-      `MM:DD:YYYY hh:mm:ss` = col_character(),
-      Device_Number = col_double(),
-      Battery_Voltage = col_double(),
-      Motor_Turns = col_double(),
-      #FR_Ratio = col_character(),
-      Active_Poke = col_character(),
-      Left_Poke_Count = col_double(),
-      Right_Poke_Count = col_double(),
-      Pellet_Count = col_double(),
-      Retrieval_Time = col_double()
+    files <- filelist()
+
+    li <- lapply(files,
+                 # using fed3 package
+           function(tt) fed3::read_fed(tt)
     )
-    
-    li <- lapply(input$file$datapath,
-           function(tt)
-    vroom::vroom(tt, delim = delim, skip = 0,
-                 col_types = FED3_classes)
-    )
-    names(li) <- input$file$datapath
-    return(li)
+    df <- bind_rows(li) %>% 
+      mutate(FED = paste0("FED", str_pad(Device_Number, width=3, pad=0)))
+    return(df)
   })
   
   # Clean ----------------------------------------------------------------
   tidied <- reactive({
     req(input$file)
     # get raw data
-    li <- raw()
-    # give them names
-    names(li) <- get_fed_names()
-    # code for a plot
-    df <- bind_rows(li, .id = "FED") %>%
-      rename(date = `MM:DD:YYYY hh:mm:ss`) %>%
-      mutate(date = as.POSIXct(date, format = "%m/%d/%Y %H:%M:%S"),
-             day = lubridate::day(date),
-             month = lubridate::month(date),
-             year = lubridate::year(date))
+    df <- raw_df()
+  
+    # get treatment key
+    req(input$treatment_key)
+    params <- yaml::read_yaml(input$treatment_key$datapath)
+    treatment_key <- create_treatment_key(params)
+
+    # bind
+    df <- left_join(df, treatment_key, by = "FED")
     
     # filter dates 
     #filter_dates <- get_date_range()
@@ -131,11 +131,10 @@ server <- function(input, output, session) {
     #  mutate(date = lubridate::as_datetime(date)) %>% 
     #  filter(between(date, filter_dates$from, filter_dates$to)) 
     
-    ## Add FR_Ratio (make compatible with FED2)
-    if("FR_Ratio" %in% names(df) == FALSE){
-      df <- df %>% mutate(FR_Ratio = 1)
-    }
-    print(df)
+    # calculate cumulative pellets
+    df <- 
+      df %>% fed3::recalculate_pellets()
+
     return(df)
   })
   
@@ -199,56 +198,64 @@ server <- function(input, output, session) {
                                                  list('5', '15', 'All'))
   )
   
-  output$preview1 <- DT::renderDataTable(raw()[[1]],
-                                     options = table_render_options)
+  output$preview1 <- DT::renderDataTable(
+    tidied() %>% select(ID, FED, Treatment) %>% distinct(),
+    options = table_render_options)
 
-  output$preview2 <- DT::renderDataTable(tidied(), options = table_render_options)
+  output$preview2 <- DT::renderDataTable(tidied(),
+                                         options = table_render_options)
 
   # Plot --------------------------------
   
   get_program <- reactive({
-    filter_value <- case_when(input$program == "FED" ~ "FED",
-                              input$program == "FR" ~ "FR",
-                              TRUE ~ "FED")
+    filter_value <- case_when(input$program == "FreeFeed" ~ "FreeFeed",
+                              input$program == "FR1" ~ "FR1",
+                              input$program == "FR3" ~ "FR3",
+                              input$program == "FR5" ~ "FR5",
+                              TRUE ~ "FreeFeed")
     return(filter_value)
   })
   
   
   plot_with_requirements <- reactive({
     df <- tidied()
+    # fix if df comes with misspell
+    if("Sessiontype" %in% names(df)){df <- rename(df, Session_Type = Sessiontype)} 
+    
     training_program <- get_program()
     
     # get type of plot
     plot_type <- input$geoms
     
-    if(training_program == "FR"){
+    if (training_program == "FR") {
       # There might be a problem if not unique
       training_program <- unique(df$FR_Ratio)
     }
     
-    df <- filter(df, FR_Ratio == training_program) %>%
+    # FED_Version > 1.1.44 saves Session_Type variable 
+    df <- filter(df, Session_Type == training_program) %>%
       # aggregate in time
-      mutate(floor_minute = lubridate::floor_date(date, unit = "1 minute"))
+      mutate(floor_minute = lubridate::floor_date(datetime, unit = "1 minute"))
     
     
     p1 <- ggplot(df, aes(!!input$x_var, !!input$y_var)) +
       labs(title = paste(input$y_var, "vs", input$x_var), 
-           subtitle = paste("Fixed Ratio is", unique(df$FR_Ratio),
-           ifelse(training_program == "FED", "-- Freely available pellets", ""))
+           subtitle = paste("Session Type is", unique(df$Session_Type),
+           ifelse(training_program == "FreeFeed", "-- Freely available pellets", ""))
            )
     
     if(input$color_var == "none"){
       p1 <- p1 +
         switch(plot_type,
                'point' = geom_point(),
-               'line' = geom_line(),
+               'line' = geom_line(aes(group=ID)),
                'boxplot' = geom_boxplot(aes(x=factor(!!input$x_var))))
     } else {
       p1 <- p1 +
         switch(plot_type,
                'point' = geom_point(aes(color = !!input$color_var)),
-               'line' = geom_line(aes(color = !!input$color_var)),
-               # maps to fill in boxplot
+               'line' = geom_line(aes(group=ID, color = !!input$color_var)),
+               # color maps to fill in boxplot
                'boxplot' = geom_boxplot(aes(x=factor(!!input$x_var),
                                             fill = !!input$color_var)))+
         theme(legend.position = "bottom")
@@ -311,10 +318,11 @@ server <- function(input, output, session) {
   # Download -------------------------------------------------------------
 output$download_data <- downloadHandler(
     filename = function() {
-      paste0(input$dateRange[1],"_to_",input$dateRange[2], "_clean_data.csv")
+      # TODO: change this garbage name 
+      paste0(input$dateRange[1],"_to_",input$dateRange[2], "_pooled_FED_data.csv")
     },
     content = function(file) {
-      vroom::vroom_write(tidied(), file)
+      vroom::vroom_write(tidied(), file, delim=",")
     }
   )
 
